@@ -1,88 +1,66 @@
 from aiogram import Router, F
-from aiogram.filters import Command
-from aiogram.types import (
-    Message, 
-    InlineKeyboardMarkup, 
-    InlineKeyboardButton,
-    CallbackQuery
-)
-from db import users
+from aiogram.types import Message, CallbackQuery
+from aiogram.filters import CommandStart, Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+
+from src.questions import QUESTIONS
+from src.keyboards import inline, play_again_keyboard
 
 router = Router()
 
-lang_inline_keyboard = InlineKeyboardMarkup(
-    inline_keyboard=[
-        [
-            InlineKeyboardButton(text="Python 🐍", callback_data="lang_python"), 
-            InlineKeyboardButton(text="JS 🌐", callback_data="lang_js"), 
-            InlineKeyboardButton(text="C# 🎯", callback_data="lang_csharp")
-        ]
-    ]
-)
+class Quiz(StatesGroup):
+    waiting_answer = State()
 
-start_learning_keyboard = InlineKeyboardMarkup(
-    inline_keyboard=[
-        [InlineKeyboardButton(text="Начать обучение 🚀", callback_data="start_learning")]
-    ]
-)
-
-@router.message(Command("start"))
+@router.message(CommandStart())
 async def cmd_start(message: Message):
-    users.register_user(message.from_user.id, message.from_user.username)
-    user_display = f"@{message.from_user.username}" if message.from_user.username else message.from_user.first_name
     await message.answer(
-        f"Привет, {user_display}! Выберите язык программирования, который хотите изучить:",
-        reply_markup=lang_inline_keyboard
+        f"Привет, {message.from_user.first_name}! Я твой первый бот.", 
+        reply_markup=inline
     )
 
-@router.callback_query(F.data == "lang_python")
-async def info_python(callback: CallbackQuery):
+@router.message(Command('game'))
+async def cmd_game(message: Message):
+    await message.answer("Выбери один из пунктов меню:", reply_markup=inline)
+
+# Хэндлер кнопки "Мой счет" (пока заглушка)
+@router.callback_query(F.data == 'my_score')
+async def show_score(callback: CallbackQuery):
     await callback.answer()
-    await callback.message.answer(
-        "🐍 *Python* — популярный язык для бэкенда, анализа данных и искусственного интеллекта.", 
-        parse_mode="Markdown",
-        reply_markup=start_learning_keyboard
-    )
+    await callback.message.answer("📊 Функция просмотра статистики из БД будет настроена позже!")
 
-@router.callback_query(F.data == "lang_js")
-async def info_js(callback: CallbackQuery):
-    await callback.answer()
-    await callback.message.answer(
-        "🌐 *JavaScript (JS)* — главный язык веб-разработки. На нем пишется весь фронтенд.", 
-        parse_mode="Markdown",
-        reply_markup=start_learning_keyboard
-    )
+# Старт викторины
+@router.callback_query(F.data == 'quiz_start')
+async def start_quiz(callback: CallbackQuery, state: FSMContext):
+    await callback.answer('Начинаем игру!!! 🔥', show_alert=True)
+    await state.update_data(index=0, score=0)
+    await state.set_state(Quiz.waiting_answer)
+    await callback.message.answer(f"Вопрос 1: {QUESTIONS[0]['q']}")
 
-@router.callback_query(F.data == "lang_csharp")
-async def info_csharp(callback: CallbackQuery):
-    await callback.answer()
-    await callback.message.answer(
-        "🎯 *C#* — мощный язык от Microsoft. Используется для создания программ и игр на Unity.", 
-        parse_mode="Markdown",
-        reply_markup=start_learning_keyboard
-    )
+# Обработка ответов пользователя внутри FSM
+@router.message(Quiz.waiting_answer)  
+async def handle_answer(message: Message, state: FSMContext):
+    data = await state.get_data()
+    index = data['index']
+    score = data['score']
 
-help_inline_keyboard = InlineKeyboardMarkup(
-    inline_keyboard=[
-        [InlineKeyboardButton(text="Документация Python", url="https://docs.python.org/3/")],
-        [InlineKeyboardButton(text="Документация JS", url="https://developer.mozilla.org/ru/docs/Web/JavaScript")],
-        [InlineKeyboardButton(text="Документация C#", url="https://learn.microsoft.com/ru-ru/dotnet/csharp/")],
-        [InlineKeyboardButton(text="Начать обучение 🚀", callback_data="start_learning")]
-    ]
-)
+    # Проверяем ответ
+    if message.text.lower().strip() == QUESTIONS[index]['a']:
+        score += 1
+        await message.answer("Правильно! 🎉 +1")
+    else:
+        await message.answer(f"Неправильно. ❌ Правильный ответ: {QUESTIONS[index]['a']}")
+    
+    index += 1
 
-@router.message(Command("help"))
-async def cmd_help(message: Message):
-    await message.answer("📚 Полезные ресурсы и ссылки для обучения:", reply_markup=help_inline_keyboard)
-
-@router.message(Command("about"))
-async def cmd_about(message: Message):
-    about_text = (
-        "🤖 *О боте:*\n\n"
-        "Привет! Я — твой первый Telegram-бот, созданный для учебы и тестирования функций."
-    )
-    await message.answer(about_text, parse_mode="Markdown")
-
-@router.callback_query(F.data == "start_learning")
-async def process_start_learning(callback: CallbackQuery):
-    await callback.answer(text="Начинаем обучение! 🚀 Удачи!", show_alert=True)
+    # Проверяем, закончились ли вопросы
+    if index >= len(QUESTIONS):
+        await message.answer(
+            f"🏆 **Конец викторины!**\nВаш итоговый счет: {score} из {len(QUESTIONS)}.",
+            parse_mode="Markdown",
+            reply_markup=play_again_keyboard  # Предлагаем сыграть снова
+        )
+        await state.clear()  # Очищаем состояние в самом конце
+    else:
+        await state.update_data(index=index, score=score)
+        await message.answer(f"Вопрос {index + 1}: {QUESTIONS[index]['q']}")

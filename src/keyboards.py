@@ -1,14 +1,15 @@
-from aiogram.types import InlineKeyboardMarkup
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-def get_tasks_keyboard(tasks) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    for idx, task in enumerate(tasks, 1):
-        task_id, title, is_done = task
-        if not is_done:
-            builder.button(
-                text=f"Выполнить №{idx}", 
-                callback_data=f"done_{task_id}"
-            )
-    builder.adjust(2)
-    return builder.as_markup()
+# Главное меню бота
+inline = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="Начать викторину 🚀", callback_data="quiz_start")],
+    [InlineKeyboardButton(text="Мой счет 📊", callback_data="my_score")],
+    [InlineKeyboardButton(text="Наш сайт 🌐", url="https://geeks.kg")]
+])
+
+keyboard_main = inline
+
+# Клавиатура после окончания игры
+play_again_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="Сыграть снова 🔄", callback_data="quiz_start")]
+])
